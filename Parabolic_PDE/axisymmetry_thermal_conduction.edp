@@ -1,0 +1,39 @@
+// Parameters
+func u0 = 10. + 90.*x/6.;
+func k = 1.8*(y<0.5) + 0.2;
+real ue = 25.;
+real alpha=0.25;
+real T=5.;
+real dt=0.1 ;
+
+// Mesh
+mesh Th = square(30, 5, [6.*x,y]);
+
+// Fespace
+fespace Vh(Th, P1);
+Vh u=u0, v, uold;
+
+problem thermaxi(u, v)
+    = int2d(Th)(
+          (u*v/dt + dx(u)*dx(v) + dy(u)*dy(v))*x
+    )
+    + int1d(Th, 3)(
+          alpha*x*u*v
+    )
+    - int1d(Th, 3)(
+          alpha*x*ue*v
+    )
+    - int2d(Th)(
+          uold*v*x/dt
+    )
+    + on(2, 4, u=u0);
+
+
+// Time iterations
+ofstream ff("thermic.dat");
+for(real t = 0; t < T; t += dt){
+    uold = u; //equivalent to u^{n-1} = u^n
+    thermaxi; //here the thermic problem is solved
+    ff << u(3., 0.5) << endl;
+    plot(u);
+}

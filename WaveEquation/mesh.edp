@@ -1,0 +1,100 @@
+// PARAM -ns 
+
+include "getARGV.idp"
+load "gsl"
+load "helper_functions"
+
+// Random seed for random number generation
+int seed = getARGV("-seed", 0);
+randinit(seed);
+gslrng randgen = gslrngtype(0); // Random number generator in GSL
+
+////////////////
+// Parameters //
+////////////////
+
+macro dimension 2 //
+real c0 = getARGV("-c0",1540);                           // background speed of sound
+real sigma = getARGV("-sigma",0.1);                      // standard deviation of normal distribution in coefficient c in reflectors
+real T = getARGV("-tissue",5.0e-3);                      // dimension [m] of biological tissue
+real radius = getARGV("-radius",0.3e-3);                 // radius [m] of reflectors
+real rho = getARGV("-rho",0.50);                         // target filling ratio of reflectors
+real delta = 1.0e-4*radius;
+real minDistance = 2*radius+delta;                       // distance [m] minimale entre les centres des cercles
+int Nreflectors = lround(rho*4*T*T/(pi*radius^2));       // target number of reflectors
+int nbndR = getARGV("-nbndR", 15);                       // number of points on boundary of reflectors
+real hmin = 2*pi*radius/nbndR;                           // minimal mesh size [m] due to presence of reflectors
+int n2T = lround(2*T/hmin);                              // total number of mesh points along biological tissue boundary
+int reflectorboundary = -1;                              // labels for the reflector boundaries
+int backgroundboundary = -2;                             // label for the square boundary
+
+////////////////
+// Reflectors //
+////////////////
+
+// Initialisation center of reflector positions
+real[int] Rx(Nreflectors), Ry(Nreflectors);
+
+// Generating reflectors: hardcore Matern process
+int[int] keep(Nreflectors);
+real ddist;
+for (int i = 0; i < Nreflectors; ++i) {
+  Rx[i] = (-T + (radius + delta)) + 2 * (T - (radius + delta)) * randreal1();;
+  Ry[i] = (-T + (radius + delta)) + 2 * (T - (radius + delta)) * randreal1();;
+  keep[i] = 1;
+  validCenter(i, Rx, Ry, keep, minDistance);
+}
+int count = 0;
+for (int i = 0; i < Nreflectors; ++i) {
+  if (keep[i]) {
+    Rx[count] = Rx[i];
+    Ry[count] = Ry[i];
+    count++;
+  }
+}
+Nreflectors = count;
+Rx.resize(Nreflectors);
+Ry.resize(Nreflectors);
+
+// Definition of boundary of reflectors
+border reflector(t=0, 2*pi; i){
+    x = Rx[i] + radius*cos(t);
+    y = Ry[i] + radius*sin(t);
+    label = reflectorboundary;  
+}
+
+// Number of mesh points on reflector boundaries
+int[int] reflectornbpts(Nreflectors);
+for (int k = 0; k < Nreflectors; k++){
+  reflectornbpts[k] = nbndR;
+}
+
+///////////////////
+// Building mesh //
+///////////////////
+
+// Biological tissue boundary
+border BTtop   (t=0, 1){x=-T+(1-t)*2*T; y=-T+ 1   *2*T; label=backgroundboundary;}
+border BTleft  (t=0, 1){x=-T+ 0   *2*T; y=-T+(1-t)*2*T; label=backgroundboundary;}
+border BTbottom(t=0, 1){x=-T+ t   *2*T; y=-T+ 0   *2*T; label=backgroundboundary;}
+border BTright (t=0, 1){x=-T+ 1   *2*T; y=-T+ t   *2*T; label=backgroundboundary;}
+
+// Building mesh
+mesh Th = buildmesh(
+  BTtop(n2T) + BTleft(n2T) + BTbottom(n2T) + BTright(n2T) +
+  reflector(reflectornbpts),
+  nbvx=10^8
+);
+plot(Th,wait=1);
+
+////////////////////
+// Speed of sound //
+////////////////////
+
+// Generating a random normal distribution of values for c around c0 in the reflectors 
+real[int] ctab(regions(Th).max+1);
+for (int k = 0; k < Nreflectors; k++){
+  ctab[k] = c0 + gslrangaussian(randgen, sigma);
+}
+// Actual speed of sound function to use in the variational form
+func c = ((region < Nreflectors) ? ctab[region] : c0);

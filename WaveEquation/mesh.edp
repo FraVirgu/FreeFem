@@ -97,4 +97,4 @@ for (int k = 0; k < Nreflectors; k++){
   ctab[k] = c0 + gslrangaussian(randgen, sigma);
 }
 // Actual speed of sound function to use in the variational form
-func c = ((region < Nreflectors) ? ctab[region] : c0);
+func c = ((region < Nreflectors) ? ctab[region] : c0); //c0 is the background speed of sound

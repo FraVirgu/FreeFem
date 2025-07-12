@@ -98,3 +98,72 @@ for (int k = 0; k < Nreflectors; k++){
 }
 // Actual speed of sound function to use in the variational form
 func c = ((region < Nreflectors) ? ctab[region] : c0); //c0 is the background speed of sound
+
+
+
+// SpaceDefinition
+fespace Vh(Th, P1);
+
+////////////////////
+// Source terms
+////////////////////
+
+real f0 = 1e6; // frequency [Hz]
+real omega0 = 2 * pi * f0;
+real t0 = 0.0;
+real tau = 0.8;
+real x0Center = 0.0;
+real y0Center = 0.0;
+
+func real f(real t) {
+  real delta = t - t0;
+  real expTerm = exp(- (omega0^2 * delta^2) / (tau^2));
+  real cosTerm = omega0 * cos(omega0 * delta);
+  real sinTerm = - (2 * omega0^2 * delta / (tau^2)) * sin(omega0 * delta);
+  return expTerm * (cosTerm + sinTerm);
+}
+
+real k0 = 1 / 50.0;
+
+Vh g = exp(-k0^2 * ((x - x0Center)^2 + (y - y0Center)^2));
+
+////////////////////
+// Initial fields
+////////////////////
+
+Vh u, un0 = 0, un1 = 0, un2 = 0;
+Vh v;
+////////////////////
+// Time stepping
+////////////////////
+
+real dt = 1e-6;
+real Tmax = 3e-5;
+int nSteps = Tmax / dt;
+real dtTmp;
+
+problem waveEquation(u, v) =
+  int2d(Th)(
+    u * v
+    + (c^2 * dt^2) * (dx(u) * dx(v) + dy(u) * dy(v))
+  )
+  - int2d(Th)(
+    (2 * un0 - un1) * v
+  )
+  - int2d(Th)(
+    (dt^2) * f(dtTmp) * g * v
+  );
+
+for (int step = 0; step < nSteps; ++step) {
+  dtTmp = step * dt;
+
+  waveEquation; // solves for u
+
+  un2 = un1;
+  un1 = un0;
+  un0 = u;
+
+  // Optional: plot or save
+  plot(u, wait = false, fill = true, value = true, cmm = "Step " + step);
+  // savevtk("wave"+step+".vtk", Th, u, dataname = "u", order = 1); // for Paraview
+}

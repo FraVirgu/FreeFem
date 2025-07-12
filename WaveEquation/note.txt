@@ -1,1 +1,65 @@
-/usr/lib/x86_64-linux-gnu/libgsl.so
+
+// SpaceDefinition
+fespace Vh(Th, P1);
+
+////////////////////
+// Source terms
+////////////////////
+
+real f0 = 1e6; // frequency [Hz]
+real omega0 = 2 * pi * f0;
+real t0 = 0.0;
+real tau = 0.8;
+real x0Center = 0.0;
+real y0Center = 0.0;
+
+func real f(real t) {
+  real delta = t - t0;
+  real expTerm = exp(- (omega0^2 * delta^2) / (tau^2));
+  real cosTerm = omega0 * cos(omega0 * delta);
+  real sinTerm = - (2 * omega0^2 * delta / (tau^2)) * sin(omega0 * delta);
+  return expTerm * (cosTerm + sinTerm);
+}
+
+real k0 = 1 / 50.0;
+
+Vh g = exp(-k0^2 * ((x - x0Center)^2 + (y - y0Center)^2));
+
+////////////////////
+// Initial fields
+////////////////////
+
+Vh u, un0 = 0, un1 = 0, un2 = 0;
+
+////////////////////
+// Time stepping
+////////////////////
+
+real dt = 1e-6;
+real Tmax = 3e-5;
+int nSteps = Tmax / dt;
+real dtTmp;
+
+problem waveEquation(u, v) =
+  int2d(Th)(
+    un2 * v
+    - 2 * un1 * v
+    + un0 * v
+    + (c^2 * dt) * (dx(u) * dx(v) + dy(u) * dy(v))
+    - (dt)^2 * f(dtTmp) * g * v
+  );
+
+for (int step = 0; step < nSteps; ++step) {
+  dtTmp = step * dt;
+
+  waveEquation; // solve and update u
+
+  // Time update
+  un2 = un1;
+  un1 = un0;
+  un0 = u;
+
+  // Optional: plot or save
+  plot(u, wait = false, fill = true, value = true, cmm = "Step " + step);
+  // savevtk("wave"+step+".vtk", Th, u, dataname = "u", order = 1); // for Paraview
+}

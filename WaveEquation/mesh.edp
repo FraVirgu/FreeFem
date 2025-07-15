@@ -110,10 +110,19 @@ fespace Vh(Th, P1);
 
 real f0 = 1e6; // frequency [Hz]
 real omega0 = 2 * pi * f0;
-real t0 = 0.0;
+real t0 = 1.2e-7; // time [s] at which the source is applied
 real tau = 0.8;
 real x0Center = 0.0;
 real y0Center = 0.0;
+
+////////////////////
+// Time stepping
+////////////////////
+
+real dt = 1e-8;
+real Tmax = 3e-5;
+int nSteps = Tmax / dt;
+real dtTmp;
 
 func real f(real t) {
   real delta = t - t0;
@@ -123,29 +132,24 @@ func real f(real t) {
   return expTerm * (cosTerm + sinTerm);
 }
 
-real k0 = 1 / 50.0;
+real k0 = (1.0/50.0)*1e9;
 
-Vh g = exp(-k0^2 * ((x - x0Center)^2 + (y - y0Center)^2));
+func g = exp(-k0^2 * ((x - x0Center)^2 + (y - y0Center)^2));
 
 ////////////////////
 // Initial fields
 ////////////////////
 
-Vh u, un0 = 0, un1 = 0, un2 = 0;
+Vh u, un0 = 0, un1 = 0;
 Vh v;
-////////////////////
-// Time stepping
-////////////////////
 
-real dt = 1e-6;
-real Tmax = 3e-5;
-int nSteps = Tmax / dt;
-real dtTmp;
 
 problem waveEquation(u, v) =
   int2d(Th)(
     u * v
-    + (c^2 * dt^2) * (dx(u) * dx(v) + dy(u) * dy(v))
+  )
+  +int2d(Th)(
+    (c^2 * dt^2) * (dx(un0) * dx(v) + dy(un0) * dy(v))
   )
   - int2d(Th)(
     (2 * un0 - un1) * v
@@ -158,12 +162,9 @@ for (int step = 0; step < nSteps; ++step) {
   dtTmp = step * dt;
 
   waveEquation; // solves for u
-
-  un2 = un1;
   un1 = un0;
   un0 = u;
 
-  // Optional: plot or save
-  plot(u, wait = false, fill = true, value = true, cmm = "Step " + step);
+  plot(u, wait = true, fill = true, value = true, cmm = "Step " + step, dim = 3);
   // savevtk("wave"+step+".vtk", Th, u, dataname = "u", order = 1); // for Paraview
 }

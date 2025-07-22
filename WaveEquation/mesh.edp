@@ -15,10 +15,10 @@ gslrng randgen = gslrngtype(0); // Random number generator in GSL
 
 macro dimension 2 //
 real c0 = getARGV("-c0",1540);                           // background speed of sound
-real sigma = getARGV("-sigma",0.1);                      // standard deviation of normal distribution in coefficient c in reflectors
+real sigma = getARGV("-sigma",0.25);                     // standard deviation of normal distribution in coefficient c in reflectors
 real T = getARGV("-tissue",5.0e-3);                      // dimension [m] of biological tissue
-real radius = getARGV("-radius",0.3e-3);                 // radius [m] of reflectors
-real rho = getARGV("-rho",0.50);                         // target filling ratio of reflectors
+real radius = getARGV("-radius",2.5e-4);                 // radius [m] of reflectors
+real rho = getARGV("-rho",0.2);                          // target filling ratio of reflectors
 real delta = 1.0e-4*radius;
 real minDistance = 2*radius+delta;                       // distance [m] minimale entre les centres des cercles
 int Nreflectors = lround(rho*4*T*T/(pi*radius^2));       // target number of reflectors
@@ -85,7 +85,7 @@ mesh Th = buildmesh(
   reflector(reflectornbpts),
   nbvx=10^8
 );
-plot(Th,wait=1);
+//plot(Th,wait=1);
 
 ////////////////////
 // Speed of sound //
@@ -94,15 +94,12 @@ plot(Th,wait=1);
 // Generating a random normal distribution of values for c around c0 in the reflectors 
 real[int] ctab(regions(Th).max+1);
 for (int k = 0; k < Nreflectors; k++){
-  ctab[k] = c0 + gslrangaussian(randgen, sigma);
+  ctab[k] = c0 * (1.0 + gslrangaussian(randgen, sigma));
 }
 // Actual speed of sound function to use in the variational form
 func c = ((region < Nreflectors) ? ctab[region] : c0); //c0 is the background speed of sound
 
 
-
-// SpaceDefinition
-fespace Vh(Th, P1);
 
 ////////////////////
 // Source terms
@@ -119,20 +116,14 @@ real y0Center = 0.0;
 // Time stepping
 ////////////////////
 
+real t = 0.0;
 real dt = 1e-8;
 real Tmax = 3e-5;
 int nSteps = Tmax / dt;
-real dtTmp;
 
-func real f(real t) {
-  real delta = t - t0;
-  real expTerm = exp(- (omega0^2 * delta^2) / (tau^2));
-  real cosTerm = omega0 * cos(omega0 * delta);
-  real sinTerm = - (2 * omega0^2 * delta / (tau^2)) * sin(omega0 * delta);
-  return expTerm * (cosTerm + sinTerm);
-}
+func f = (omega0 * cos(omega0 * (t - t0)) - (2 * omega0^2 * (t - t0) / (tau^2)) * sin(omega0 * (t - t0))) * exp(- (omega0^2 * (t - t0)^2) / (tau^2));
 
-real k0 = (1.0/50.0)*1e9;
+real k0 = (1.0/50.0)*1e5;
 
 func g = exp(-k0^2 * ((x - x0Center)^2 + (y - y0Center)^2));
 
@@ -140,11 +131,26 @@ func g = exp(-k0^2 * ((x - x0Center)^2 + (y - y0Center)^2));
 // Initial fields
 ////////////////////
 
+func Pk = P1;
+
+// SpaceDefinition
+fespace Vh(Th, Pk);
 Vh u, un0 = 0, un1 = 0;
 Vh v;
 
+cout << "Length of tissue             " << 2*T       * 1.0e6 << "\t[\mu m]" << endl;
+cout << "Radius of reflector          " << radius    * 1.0e6 << "\t[\mu m]" << endl;
+cout << "Wavelength                   " << c0/f0     * 1.0e6 << "\t[\mu m]" << endl;
+cout << "Meshsize h                   " << 2.0*T/n2T * 1.0e6 << "\t[\mu m]" << endl;
+cout << "Gaussian parameter           " << 1.0/k0    * 1.0e6 << "\t[\mu m]" << endl;
 
-problem waveEquation(u, v) =
+cout << "Center of source function    " << t0        * 1.0e9 << "\t[ns]" << endl;
+cout << "Time step                    " << dt        * 1.0e9 << "\t[ns]" << endl;
+
+cout << "CFL condition                " << c0*dt/(2.0*(2.0*T/n2T)) << endl;
+
+int step = 0;
+problem waveEquation(u, v, init=step) =
   int2d(Th)(
     u * v
   )
@@ -155,16 +161,24 @@ problem waveEquation(u, v) =
     (2 * un0 - un1) * v
   )
   - int2d(Th)(
-    (dt^2) * f(dtTmp) * g * v
+    (dt^2) * f * g * v
   );
 
-for (int step = 0; step < nSteps; ++step) {
-  dtTmp = step * dt;
+Vh cv = c;
+plot(cv, wait = true, fill = true, value = true, dim = 2);
+
+real tic, toc;
+for (step = 0; step < nSteps; ++step) {
+  t = step * dt;
+  tic = clock();
 
   waveEquation; // solves for u
   un1 = un0;
   un0 = u;
 
-  plot(u, wait = true, fill = true, value = true, cmm = "Step " + step, dim = 3);
+  toc = clock() - tic;
+  cout << toc << endl;
+
+  plot(u, wait = false, fill = true, value = true, cmm = "Step " + step, dim = 2);
   // savevtk("wave"+step+".vtk", Th, u, dataname = "u", order = 1); // for Paraview
 }
